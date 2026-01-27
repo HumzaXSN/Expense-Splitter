@@ -335,7 +335,7 @@ export default function ExpenseSplitter() {
       setGroups(groups.map(g => g.id === updatedGroup.id ? updatedGroup : g));
     }
     setNewMemberName('');
-    setShowAddMemberModal(false);
+    // setShowAddMemberModal(false);
     toast({ title: 'Success', description: 'Member added!' });
   };
 
