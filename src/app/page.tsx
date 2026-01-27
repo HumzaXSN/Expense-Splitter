@@ -87,6 +87,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine } from 'recharts';
 
 type View = 'dashboard' | 'groups' | 'group-detail';
 type GroupView = 'balances' | 'add-expense' | 'history';
@@ -649,6 +650,16 @@ export default function ExpenseSplitter() {
     return getMemberBalance(username, username, simplifiedDebts || []);
   };
 
+  // Prepare data for the graph
+  const balanceChartData = selectedGroup?.members.map(member => {
+    const balance = getMemberBalanceInfo(member);
+    return {
+      name: member === username ? 'You' : member,
+      amount: balance.netBalance,
+      fill: balance.netBalance >= 0 ? '#22c55e' : '#ef4444' // Green or Red
+    };
+  }) || [];
+
   // Render username modal
   if (showUsernameModal) {
     return (
@@ -765,7 +776,12 @@ export default function ExpenseSplitter() {
                   // Calculate your net balance in this group
                   const groupBalances = calculateBalances(group.members, groupExpenses, groupSettlements);
                   const yourBalance = groupBalances.find(b => b.memberId === username);
-                  const netBalance = yourBalance?.amount || 0;
+
+                  // FIX: Round to 2 decimals to remove floating point artifacts like -0.0000001
+                  let netBalance = yourBalance?.amount || 0;
+                  if (Math.abs(netBalance) < 0.01) {
+                    netBalance = 0;
+                  }
 
                   return (
                     <Card
@@ -1111,6 +1127,32 @@ export default function ExpenseSplitter() {
                       })}
                     </div>
                   </ScrollArea>
+                </CardContent>
+              </Card>
+
+              <Card className="mb-6">
+                <CardHeader>
+                  <CardTitle>Balance Visualization</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-[300px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={balanceChartData} layout="vertical" margin={{ left: 20 }}>
+                        <XAxis type="number" hide />
+                        <YAxis dataKey="name" type="category" width={80} />
+                        <Tooltip 
+                          formatter={(value: number) => formatCurrency(value, selectedGroup.currency)}
+                          cursor={{ fill: 'transparent' }}
+                        />
+                        <ReferenceLine x={0} stroke="#9ca3af" />
+                        <Bar dataKey="amount" radius={[4, 4, 4, 4]}>
+                          {balanceChartData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.fill} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
                 </CardContent>
               </Card>
             </TabsContent>
