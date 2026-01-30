@@ -250,6 +250,160 @@ export async function deleteSettlement(id: string): Promise<void> {
 }
 
 /**
+ * Remove a member from group expenses/settlements by redistributing their share
+ * Keeps expenses, but removes the member's splits and rebalances among remaining members.
+ */
+export async function deleteMemberExpenses(
+  groupId: string,
+  memberName: string,
+  remainingMembers: string[],
+  fallbackPayer: string
+): Promise<void> {
+  const database = await initDB();
+
+  // Get all expenses for this group
+  const groupExpenses = await database.getAllFromIndex('expenses', 'by-groupId', groupId);
+
+  const normalizedMembers = remainingMembers.filter(m => m !== memberName);
+
+  const toRounded = (value: number) => Math.round(value * 100) / 100;
+
+  const buildEqualSplits = (total: number) => {
+    const count = normalizedMembers.length;
+    const base = toRounded(total / count);
+    const splits = normalizedMembers.map(memberId => ({
+      memberId,
+      amount: base,
+      percentage: toRounded(100 / count),
+    }));
+
+    // Fix rounding drift on the last member
+    const sum = splits.reduce((acc, s) => acc + s.amount, 0);
+    const drift = toRounded(total - sum);
+    if (splits.length > 0 && Math.abs(drift) > 0) {
+      splits[splits.length - 1].amount = toRounded(splits[splits.length - 1].amount + drift);
+    }
+    return splits;
+  };
+
+  const redistributeExpense = (expense: ExpenseSplitDB['expenses']['value']) => {
+    if (normalizedMembers.length === 0) return expense;
+
+    const paidBy = expense.paidBy === memberName ? fallbackPayer : expense.paidBy;
+    const remainingSplits = expense.splits.filter(s => s.memberId !== memberName);
+    const remainingByMember = new Map(remainingSplits.map(s => [s.memberId, s]));
+
+    if (expense.splitType === 'equal') {
+      return {
+        ...expense,
+        paidBy,
+        splits: buildEqualSplits(expense.amount),
+      };
+    }
+
+    if (expense.splitType === 'percentage') {
+      let totalPercent = 0;
+      const percents = normalizedMembers.map(memberId => {
+        const split = remainingByMember.get(memberId);
+        const percent = split?.percentage ?? (split ? (split.amount / expense.amount) * 100 : 0);
+        totalPercent += percent;
+        return { memberId, percent };
+      });
+
+      if (totalPercent <= 0.01) {
+        return {
+          ...expense,
+          paidBy,
+          splits: buildEqualSplits(expense.amount),
+        };
+      }
+
+      const normalized = percents.map(p => ({
+        memberId: p.memberId,
+        percentage: (p.percent / totalPercent) * 100,
+      }));
+
+      const splits = normalized.map(p => ({
+        memberId: p.memberId,
+        percentage: toRounded(p.percentage),
+        amount: toRounded((expense.amount * p.percentage) / 100),
+      }));
+
+      const sum = splits.reduce((acc, s) => acc + s.amount, 0);
+      const drift = toRounded(expense.amount - sum);
+      if (splits.length > 0 && Math.abs(drift) > 0) {
+        splits[splits.length - 1].amount = toRounded(splits[splits.length - 1].amount + drift);
+      }
+
+      return {
+        ...expense,
+        paidBy,
+        splits,
+      };
+    }
+
+    // fixed
+    const fixedSplits = normalizedMembers.map(memberId => {
+      const split = remainingByMember.get(memberId);
+      return {
+        memberId,
+        amount: split ? split.amount : 0,
+      };
+    });
+
+    const currentTotal = fixedSplits.reduce((acc, s) => acc + s.amount, 0);
+    if (currentTotal <= 0.01) {
+      return {
+        ...expense,
+        paidBy,
+        splits: buildEqualSplits(expense.amount),
+      };
+    }
+
+    const remainingAmount = expense.amount - currentTotal;
+    const share = toRounded(remainingAmount / normalizedMembers.length);
+    const splits = fixedSplits.map(s => ({
+      memberId: s.memberId,
+      amount: toRounded(s.amount + share),
+    }));
+
+    const sum = splits.reduce((acc, s) => acc + s.amount, 0);
+    const drift = toRounded(expense.amount - sum);
+    if (splits.length > 0 && Math.abs(drift) > 0) {
+      splits[splits.length - 1].amount = toRounded(splits[splits.length - 1].amount + drift);
+    }
+
+    return {
+      ...expense,
+      paidBy,
+      splits,
+    };
+  };
+
+  // Get all settlements for this group
+  const groupSettlements = await database.getAllFromIndex('settlements', 'by-groupId', groupId);
+
+  const settlementsToDelete = groupSettlements.filter(
+    settlement => settlement.fromMember === memberName || settlement.toMember === memberName
+  );
+
+  const updatedExpenses = groupExpenses.map(expense => {
+    if (
+      expense.paidBy !== memberName &&
+      !expense.splits.some(split => split.memberId === memberName)
+    ) {
+      return expense;
+    }
+    return redistributeExpense(expense);
+  });
+
+  await Promise.all([
+    ...updatedExpenses.map(expense => database.put('expenses', expense)),
+    ...settlementsToDelete.map(settlement => database.delete('settlements', settlement.id)),
+  ]);
+}
+
+/**
  * ================= DATA EXPORT/IMPORT =================
  */
 

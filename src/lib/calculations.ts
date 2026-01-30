@@ -179,6 +179,9 @@ export function calculateExpenseSplits(
   const splits: { memberId: string; amount: number; percentage?: number }[] = [];
 
   if (splitType === 'equal') {
+    if (members.length === 0) {
+      throw new Error('Cannot split with no members');
+    }
     const share = totalAmount / members.length;
     const percentage = 100 / members.length;
     members.forEach(memberId => {
@@ -190,11 +193,23 @@ export function calculateExpenseSplits(
     });
   } else if (splitType === 'percentage') {
     if (!customSplits) throw new Error('Custom splits required for percentage split');
-    
+
+    if (customSplits.length === 0) {
+      throw new Error('At least one member must have a percentage');
+    }
+
+    // Check that all splits are for valid members
+    const validMembers = new Set(members);
+    customSplits.forEach(split => {
+      if (!validMembers.has(split.memberId)) {
+        throw new Error(`Member "${split.memberId}" is not in this group`);
+      }
+    });
+
     // Validate percentages sum to 100
     const totalPercentage = customSplits.reduce((sum, s) => sum + s.value, 0);
     if (Math.abs(totalPercentage - 100) > 0.01) {
-      throw new Error('Percentages must sum to 100%');
+      throw new Error(`Percentages must sum to 100% (current: ${totalPercentage.toFixed(2)}%)`);
     }
 
     customSplits.forEach(split => {
@@ -206,11 +221,23 @@ export function calculateExpenseSplits(
     });
   } else if (splitType === 'fixed') {
     if (!customSplits) throw new Error('Custom splits required for fixed split');
-    
+
+    if (customSplits.length === 0) {
+      throw new Error('At least one member must have an amount');
+    }
+
+    // Check that all splits are for valid members
+    const validMembers = new Set(members);
+    customSplits.forEach(split => {
+      if (!validMembers.has(split.memberId)) {
+        throw new Error(`Member "${split.memberId}" is not in this group`);
+      }
+    });
+
     // Validate amounts sum to total
     const totalSplitAmount = customSplits.reduce((sum, s) => sum + s.value, 0);
     if (Math.abs(totalSplitAmount - totalAmount) > 0.01) {
-      throw new Error('Split amounts must equal the total');
+      throw new Error(`Split amounts must equal total (split: ${totalSplitAmount.toFixed(2)}, total: ${totalAmount.toFixed(2)})`);
     }
 
     customSplits.forEach(split => {

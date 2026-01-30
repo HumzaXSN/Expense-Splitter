@@ -54,6 +54,7 @@ import {
   deleteSettlement,
   exportAllData,
   importAllData,
+  deleteMemberExpenses,
 } from '@/lib/storage';
 import {
   calculateBalances,
@@ -163,7 +164,7 @@ export default function ExpenseSplitter() {
   const [showSettleModal, setShowSettleModal] = useState(false);
   const [showEditExpenseModal, setShowEditExpenseModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
-
+  
   // Form states
   const [newGroupName, setNewGroupName] = useState('');
   const [newMemberName, setNewMemberName] = useState('');
@@ -346,6 +347,27 @@ export default function ExpenseSplitter() {
       toast({ title: 'Error', description: 'Cannot remove the last member', variant: 'destructive' });
       return;
     }
+
+    const settlements = await getGroupSettlements(selectedGroup.id);
+    const hasSettlements = settlements.some(
+      settlement => settlement.fromMember === memberName || settlement.toMember === memberName
+    );
+    if (hasSettlements) {
+      toast({
+        title: 'Error',
+        description: 'Cannot remove this member because a settlement is already recorded for them.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const remainingMembers = selectedGroup.members.filter(m => m !== memberName);
+    const fallbackPayer = remainingMembers.includes(username) ? username : remainingMembers[0];
+
+    // Redistribute this member's shares among the remaining members
+    await deleteMemberExpenses(selectedGroup.id, memberName, remainingMembers, fallbackPayer);
+
+    // Update group members
     await updateGroup(selectedGroup.id, {
       members: selectedGroup.members.filter(m => m !== memberName),
     });
@@ -353,8 +375,10 @@ export default function ExpenseSplitter() {
     if (updatedGroup) {
       setSelectedGroup(updatedGroup);
       setGroups(groups.map(g => g.id === updatedGroup.id ? updatedGroup : g));
+      // Reload group data after removing member's expenses
+      await loadGroupData(selectedGroup.id);
     }
-    toast({ title: 'Success', description: 'Member removed!' });
+    toast({ title: 'Success', description: 'Member removed and expenses rebalanced.' });
   };
 
   const handleAddExpense = async () => {
@@ -743,10 +767,10 @@ export default function ExpenseSplitter() {
                   <ArrowDownCircle className="w-4 h-4 mr-2" />
                   Refresh
                 </Button>
-                <Button onClick={() => setShowCreateGroupModal(true)}>
-                  <Plus className="w-4 h-4 mr-2" />
-                  New Group
-                </Button>
+              <Button onClick={() => setShowCreateGroupModal(true)}>
+                <Plus className="w-4 h-4 mr-2" />
+                New Group
+              </Button>
               </div>
             </div>
 
@@ -811,11 +835,11 @@ export default function ExpenseSplitter() {
                           <div className="flex items-center justify-between text-sm">
                             <div className="flex items-center gap-4">
                               <div className="flex items-center gap-1 text-muted-foreground">
-                                <Receipt className="w-4 h-4" />
+                            <Receipt className="w-4 h-4" />
                                 {groupExpenses.length}
-                              </div>
+                          </div>
                               <div className="flex items-center gap-1 text-muted-foreground">
-                                <Clock className="w-4 h-4" />
+                            <Clock className="w-4 h-4" />
                                 {groupSettlements.length}
                               </div>
                             </div>
