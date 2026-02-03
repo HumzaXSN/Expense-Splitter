@@ -3,7 +3,8 @@
  * Provides offline support and caching for static assets
  */
 
-const CACHE_NAME = 'expense-splitter-v1';
+// Bump this value on deploys to invalidate old caches.
+const CACHE_NAME = 'expense-splitter-v2';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
@@ -19,7 +20,6 @@ self.addEventListener('install', (event) => {
       return cache.addAll(STATIC_ASSETS);
     })
   );
-  self.skipWaiting();
 });
 
 // Activate event - clean up old caches
@@ -41,42 +41,53 @@ self.addEventListener('activate', (event) => {
 
 // Fetch event - serve from cache, fall back to network
 self.addEventListener('fetch', (event) => {
-  event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      if (cachedResponse) {
-        // Return cached version
-        return cachedResponse;
-      }
+  const { request } = event;
 
-      // Otherwise, fetch from network
-      return fetch(event.request).then((response) => {
-        // Check if valid response
-        if (!response || response.status !== 200 || response.type !== 'basic') {
+  if (request.method !== 'GET') {
+    return;
+  }
+
+  // For navigation requests, try network first so updates land quickly.
+  if (request.mode === 'navigate' || request.destination === 'document') {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          const responseToCache = response.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put('/', responseToCache);
+          });
           return response;
-        }
+        })
+        .catch(() => caches.match('/') || caches.match(request))
+    );
+    return;
+  }
 
-        // Clone response since it can only be consumed once
-        const responseToCache = response.clone();
+  // For same-origin static assets, serve cache first and update in background.
+  if (new URL(request.url).origin === self.location.origin) {
+    event.respondWith(
+      caches.match(request).then((cachedResponse) => {
+        const networkFetch = fetch(request)
+          .then((response) => {
+            if (response && response.status === 200) {
+              const responseToCache = response.clone();
+              caches.open(CACHE_NAME).then((cache) => {
+                cache.put(request, responseToCache);
+              });
+            }
+            return response;
+          })
+          .catch(() => cachedResponse);
 
-        caches.open(CACHE_NAME).then((cache) => {
-          // Cache the fetched response for future
-          cache.put(event.request, responseToCache);
-        });
-
-        return response;
-      });
-    }).catch(() => {
-      // If both cache and network fail, return offline fallback for HTML requests
-      if (event.request.destination === 'document') {
-        return caches.match('/');
-      }
-    })
-  );
+        return cachedResponse || networkFetch;
+      })
+    );
+  }
 });
 
 // Handle skipWaiting
 self.addEventListener('message', (event) => {
-  if (event.data === 'SKIP_WAITING') {
+  if (event.data === 'SKIP_WAITING' || event.data?.type === 'SKIP_WAITING') {
     self.skipWaiting();
   }
 });

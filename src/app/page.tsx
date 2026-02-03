@@ -58,7 +58,7 @@ import {
 } from '@/lib/storage';
 import {
   calculateBalances,
-  simplifyDebts,
+  calculatePairwiseDebts,
   getMemberBalance,
   calculateExpenseSplits,
   formatCurrency,
@@ -155,7 +155,7 @@ export default function ExpenseSplitter() {
   // Group data
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [settlements, setSettlements] = useState<Settlement[]>([]);
-  const [simplifiedDebts, setSimplifiedDebts] = useState<SimplifiedDebt[]>([]);
+  const [pairwiseDebts, setPairwiseDebts] = useState<SimplifiedDebt[]>([]);
   
   // Modal states
   const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
@@ -263,10 +263,9 @@ export default function ExpenseSplitter() {
   // Recalculate balances when expenses or settlements change
   useEffect(() => {
     if (selectedGroup) {
-      const balances = calculateBalances(selectedGroup.members, expenses, settlements);
-      const simplified = simplifyDebts(balances);
+      const pairwise = calculatePairwiseDebts(selectedGroup.members, expenses, settlements);
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setSimplifiedDebts(simplified);
+      setPairwiseDebts(pairwise);
     }
   }, [expenses, settlements, selectedGroup]);
 
@@ -345,6 +344,17 @@ export default function ExpenseSplitter() {
     if (!selectedGroup) return;
     if (selectedGroup.members.length <= 1) {
       toast({ title: 'Error', description: 'Cannot remove the last member', variant: 'destructive' });
+      return;
+    }
+
+    const groupExpenses = await getGroupExpenses(selectedGroup.id);
+    const hasPaidExpenses = groupExpenses.some(expense => expense.paidBy === memberName);
+    if (hasPaidExpenses) {
+      toast({
+        title: 'Error',
+        description: 'Cannot remove this member because they have paid at least one expense.',
+        variant: 'destructive',
+      });
       return;
     }
 
@@ -625,7 +635,7 @@ export default function ExpenseSplitter() {
 
   const handleWhatsAppShare = () => {
     if (!selectedGroup) return;
-    const text = generateWhatsAppShareText(selectedGroup.name, selectedGroup.currency, simplifiedDebts, expenses);
+    const text = generateWhatsAppShareText(selectedGroup.name, selectedGroup.currency, pairwiseDebts, expenses);
     const encodedText = encodeURIComponent(text);
     const url = `https://wa.me/?text=${encodedText}`;
     window.open(url, '_blank');
@@ -663,7 +673,7 @@ export default function ExpenseSplitter() {
   });
 
   const getMemberBalanceInfo = (memberName: string): MemberBalance => {
-    const balance = getMemberBalance(memberName, memberName, simplifiedDebts || []);
+    const balance = getMemberBalance(memberName, memberName, pairwiseDebts || []);
     return balance;
   };
 
@@ -671,7 +681,7 @@ export default function ExpenseSplitter() {
     if (!selectedGroup || !selectedGroup.members.includes(username)) {
       return null;
     }
-    return getMemberBalance(username, username, simplifiedDebts || []);
+    return getMemberBalance(username, username, pairwiseDebts || []);
   };
 
   // Prepare data for the graph
@@ -1055,7 +1065,7 @@ export default function ExpenseSplitter() {
                 </Button>
               </div>
 
-              {simplifiedDebts.length === 0 ? (
+              {pairwiseDebts.length === 0 ? (
                 <Card>
                   <CardContent className="text-center py-8">
                     <Check className="w-12 h-12 mx-auto mb-3 text-green-500" />
@@ -1065,7 +1075,7 @@ export default function ExpenseSplitter() {
                 </Card>
               ) : (
                 <div className="grid gap-3 md:grid-cols-2">
-                  {simplifiedDebts.map((debt, index) => (
+                  {pairwiseDebts.map((debt, index) => (
                     <Card key={index} className="relative">
                       <CardContent className="p-4">
                         <div className="flex items-center justify-between">

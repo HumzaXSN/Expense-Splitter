@@ -68,6 +68,60 @@ export function calculateBalances(
 }
 
 /**
+ * Calculate pairwise debts without simplifying across different people.
+ * Produces a list of "A owes B" entries and auto-nets within the same pair.
+ * Settlements reduce the specific pair they were made against.
+ */
+export function calculatePairwiseDebts(
+  members: string[],
+  expenses: ExpenseSplitDB['expenses']['value'][],
+  settlements: ExpenseSplitDB['settlements']['value'][]
+): SimplifiedDebt[] {
+  const debtMap = new Map<string, number>();
+
+  const addDebt = (fromMember: string, toMember: string, amount: number) => {
+    if (!fromMember || !toMember || fromMember === toMember) return;
+    const [a, b] = fromMember < toMember ? [fromMember, toMember] : [toMember, fromMember];
+    const sign = fromMember === a ? 1 : -1;
+    const key = `${a}||${b}`;
+    debtMap.set(key, (debtMap.get(key) || 0) + sign * amount);
+  };
+
+  // Build debts directly from expenses (who owes the payer)
+  expenses.forEach(expense => {
+    expense.splits.forEach(split => {
+      if (split.memberId === expense.paidBy) return;
+      if (split.amount <= 0) return;
+      addDebt(split.memberId, expense.paidBy, split.amount);
+    });
+  });
+
+  // Apply settlements to the specific pair (do not net across others)
+  settlements.forEach(settlement => {
+    if (settlement.amount <= 0) return;
+    addDebt(settlement.fromMember, settlement.toMember, -settlement.amount);
+  });
+
+  const result: SimplifiedDebt[] = [];
+  debtMap.forEach((amount, key) => {
+    if (Math.abs(amount) < 0.01) return;
+    const [a, b] = key.split('||');
+    const rounded = Math.round(Math.abs(amount) * 100) / 100;
+    if (amount > 0) {
+      result.push({ fromMember: a, toMember: b, amount: rounded });
+    } else {
+      result.push({ fromMember: b, toMember: a, amount: rounded });
+    }
+  });
+
+  return result.sort((a, b) => {
+    const fromCompare = a.fromMember.localeCompare(b.fromMember);
+    if (fromCompare !== 0) return fromCompare;
+    return a.toMember.localeCompare(b.toMember);
+  });
+}
+
+/**
  * Simplify debts using a greedy algorithm
  * Minimizes the number of transactions needed to settle all debts
  * 
