@@ -47,18 +47,23 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // For navigation requests, try network first so updates land quickly.
+  // For navigation requests, serve cache first for instant load,
+  // then update the cached shell in the background.
   if (request.mode === 'navigate' || request.destination === 'document') {
     event.respondWith(
-      fetch(request)
-        .then((response) => {
-          const responseToCache = response.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put('/', responseToCache);
-          });
-          return response;
-        })
-        .catch(() => caches.match('/') || caches.match(request))
+      caches.match('/').then((cachedResponse) => {
+        const networkFetch = fetch(request)
+          .then((response) => {
+            const responseToCache = response.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put('/', responseToCache);
+            });
+            return response;
+          })
+          .catch(() => cachedResponse);
+
+        return cachedResponse || networkFetch;
+      })
     );
     return;
   }
