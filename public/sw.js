@@ -4,7 +4,7 @@
  */
 
 // Bump this value on deploys to invalidate old caches.
-const CACHE_NAME = 'expense-splitter-v2';
+const CACHE_NAME = 'expense-splitter-v2.0.1';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
