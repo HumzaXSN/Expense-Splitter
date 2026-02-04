@@ -13,6 +13,9 @@ export function ServiceWorkerRegistration() {
   const hasRefreshed = useRef(false);
 
   useEffect(() => {
+    if (process.env.NODE_ENV !== 'production') {
+      return;
+    }
     // Only register service worker in production or when explicitly enabled
     if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
       window.addEventListener('load', () => {
