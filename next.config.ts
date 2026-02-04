@@ -76,7 +76,7 @@ const nextConfig = withPWA({
   dest: "public",
   register: false,
   skipWaiting: false,
-  disable: process.env.NODE_ENV !== "production",
+  disable: process.env.NODE_ENV === "development",
   runtimeCaching: customRuntimeCaching,
   additionalManifestEntries,
   fallbacks: {
