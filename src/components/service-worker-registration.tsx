@@ -88,6 +88,50 @@ export function ServiceWorkerRegistration() {
 
         window.addEventListener('focus', updateOnFocus);
         window.addEventListener('online', updateOnFocus);
+
+        const manualUpdateCheck = async () => {
+          const reg = await navigator.serviceWorker.getRegistration();
+          if (!reg) {
+            toast({ title: 'Updates', description: 'Service worker not installed.' });
+            return;
+          }
+
+          await reg.update();
+
+          if (reg.waiting) {
+            toast({
+              title: "Update available",
+              description: "A new version is ready. Refresh to update.",
+              action: (
+                <ToastAction
+                  altText="Refresh"
+                  onClick={() => {
+                    reg.waiting?.postMessage({ type: 'SKIP_WAITING' });
+                  }}
+                >
+                  Refresh
+                </ToastAction>
+              ),
+            });
+          } else {
+            toast({ title: 'Up to date', description: 'You already have the latest version.' });
+          }
+        };
+
+        const onManualCheck = () => {
+          manualUpdateCheck().catch((error) => {
+            console.error('[Service Worker] Manual update failed:', error);
+            toast({ title: 'Update check failed', description: 'Please try again.' });
+          });
+        };
+
+        window.addEventListener('pwa:check-updates', onManualCheck as EventListener);
+
+        return () => {
+          window.removeEventListener('focus', updateOnFocus);
+          window.removeEventListener('online', updateOnFocus);
+          window.removeEventListener('pwa:check-updates', onManualCheck as EventListener);
+        };
       });
     }
   }, []);

@@ -962,6 +962,21 @@ export default function ExpenseSplitter() {
                   {appVersion}
                 </div>
               </div>
+              <Separator />
+              <div>
+                <Label className="mb-2 block">Updates</Label>
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => {
+                    if (typeof window !== 'undefined') {
+                      window.dispatchEvent(new Event('pwa:check-updates'));
+                    }
+                  }}
+                >
+                  Check for updates
+                </Button>
+              </div>
             </div>
             <DialogFooter>
               <Button onClick={() => setShowSettingsModal(false)}>Close</Button>
