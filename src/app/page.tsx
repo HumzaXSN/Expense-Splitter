@@ -143,6 +143,7 @@ const PAYMENT_METHODS = ['Cash', 'JazzCash', 'EasyPaisa', 'Bank Transfer', 'UPI'
 
 export default function ExpenseSplitter() {
   const { toast } = useToast();
+  const appVersion = process.env.NEXT_PUBLIC_APP_VERSION || 'dev';
   
   // App state
   const [username, setUsernameState] = useState('');
@@ -952,6 +953,13 @@ export default function ExpenseSplitter() {
                       className="cursor-pointer"
                     />
                   </div>
+                </div>
+              </div>
+              <Separator />
+              <div>
+                <Label className="mb-2 block">App Version</Label>
+                <div className="text-sm text-muted-foreground">
+                  {appVersion}
                 </div>
               </div>
             </div>
