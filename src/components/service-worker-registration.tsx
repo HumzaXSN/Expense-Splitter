@@ -16,89 +16,65 @@ export function ServiceWorkerRegistration() {
     if (process.env.NODE_ENV !== 'production') {
       return;
     }
-    // Only register service worker in production or when explicitly enabled
-    if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker
-          .register('/sw.js')
-          .then((registration) => {
-            console.log('[Service Worker] Registered successfully:', registration.scope);
+    if (typeof window === 'undefined') {
+      return;
+    }
 
-            if (registration.waiting && navigator.serviceWorker.controller) {
-              toast({
-                title: "Update available",
-                description: "A new version is ready. Refresh to update.",
-                action: (
-                  <ToastAction
-                    altText="Refresh"
-                    onClick={() => {
-                      registration.waiting?.postMessage({ type: 'SKIP_WAITING' });
-                    }}
-                  >
-                    Refresh
-                  </ToastAction>
-                ),
-              });
-            }
+    if (!('serviceWorker' in navigator)) {
+      const onManualCheck = () => {
+        toast({ title: 'Updates', description: 'Service workers are not supported on this device.' });
+      };
+      window.addEventListener('pwa:check-updates', onManualCheck as EventListener);
+      return () => {
+        window.removeEventListener('pwa:check-updates', onManualCheck as EventListener);
+      };
+    }
 
-            // Check for updates
-            registration.addEventListener('updatefound', () => {
-              const newWorker = registration.installing;
-              if (newWorker) {
-                newWorker.addEventListener('statechange', () => {
-                  if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                    // New version available
-                    console.log('[Service Worker] New version available');
-                    toast({
-                      title: "Update available",
-                      description: "A new version is ready. Refresh to update.",
-                      action: (
-                        <ToastAction
-                          altText="Refresh"
-                          onClick={() => {
-                            if (registration.waiting) {
-                              registration.waiting.postMessage({ type: 'SKIP_WAITING' });
-                            }
-                          }}
-                        >
-                          Refresh
-                        </ToastAction>
-                      ),
-                    });
-                  }
-                });
-              }
-            });
-          })
-          .catch((error) => {
-            console.error('[Service Worker] Registration failed:', error);
-          });
+    const manualUpdateCheck = async () => {
+      const reg = await navigator.serviceWorker.getRegistration();
+      if (!reg) {
+        toast({ title: 'Updates', description: 'Service worker not installed yet.' });
+        return;
+      }
 
-        navigator.serviceWorker.addEventListener('controllerchange', () => {
-          if (hasRefreshed.current) {
-            return;
-          }
-          hasRefreshed.current = true;
-          window.location.reload();
+      await reg.update();
+
+      if (reg.waiting) {
+        toast({
+          title: "Update available",
+          description: "A new version is ready. Refresh to update.",
+          action: (
+            <ToastAction
+              altText="Refresh"
+              onClick={() => {
+                reg.waiting?.postMessage({ type: 'SKIP_WAITING' });
+              }}
+            >
+              Refresh
+            </ToastAction>
+          ),
         });
+      } else {
+        toast({ title: 'Up to date', description: 'You already have the latest version.' });
+      }
+    };
 
-        const updateOnFocus = () => {
-          navigator.serviceWorker.getRegistration().then((reg) => reg?.update());
-        };
+    const onManualCheck = () => {
+      manualUpdateCheck().catch((error) => {
+        console.error('[Service Worker] Manual update failed:', error);
+        toast({ title: 'Update check failed', description: 'Please try again.' });
+      });
+    };
 
-        window.addEventListener('focus', updateOnFocus);
-        window.addEventListener('online', updateOnFocus);
+    window.addEventListener('pwa:check-updates', onManualCheck as EventListener);
 
-        const manualUpdateCheck = async () => {
-          const reg = await navigator.serviceWorker.getRegistration();
-          if (!reg) {
-            toast({ title: 'Updates', description: 'Service worker not installed.' });
-            return;
-          }
+    const register = () => {
+      navigator.serviceWorker
+        .register('/sw.js')
+        .then((registration) => {
+          console.log('[Service Worker] Registered successfully:', registration.scope);
 
-          await reg.update();
-
-          if (reg.waiting) {
+          if (registration.waiting && navigator.serviceWorker.controller) {
             toast({
               title: "Update available",
               description: "A new version is ready. Refresh to update.",
@@ -106,34 +82,76 @@ export function ServiceWorkerRegistration() {
                 <ToastAction
                   altText="Refresh"
                   onClick={() => {
-                    reg.waiting?.postMessage({ type: 'SKIP_WAITING' });
+                    registration.waiting?.postMessage({ type: 'SKIP_WAITING' });
                   }}
                 >
                   Refresh
                 </ToastAction>
               ),
             });
-          } else {
-            toast({ title: 'Up to date', description: 'You already have the latest version.' });
           }
-        };
 
-        const onManualCheck = () => {
-          manualUpdateCheck().catch((error) => {
-            console.error('[Service Worker] Manual update failed:', error);
-            toast({ title: 'Update check failed', description: 'Please try again.' });
+          // Check for updates
+          registration.addEventListener('updatefound', () => {
+            const newWorker = registration.installing;
+            if (newWorker) {
+              newWorker.addEventListener('statechange', () => {
+                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                  // New version available
+                  console.log('[Service Worker] New version available');
+                  toast({
+                    title: "Update available",
+                    description: "A new version is ready. Refresh to update.",
+                    action: (
+                      <ToastAction
+                        altText="Refresh"
+                        onClick={() => {
+                          if (registration.waiting) {
+                            registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+                          }
+                        }}
+                      >
+                        Refresh
+                      </ToastAction>
+                    ),
+                  });
+                }
+              });
+            }
           });
-        };
+        })
+        .catch((error) => {
+          console.error('[Service Worker] Registration failed:', error);
+        });
+    };
 
-        window.addEventListener('pwa:check-updates', onManualCheck as EventListener);
-
-        return () => {
-          window.removeEventListener('focus', updateOnFocus);
-          window.removeEventListener('online', updateOnFocus);
-          window.removeEventListener('pwa:check-updates', onManualCheck as EventListener);
-        };
-      });
+    if (document.readyState === 'complete') {
+      register();
+    } else {
+      window.addEventListener('load', register);
     }
+
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (hasRefreshed.current) {
+        return;
+      }
+      hasRefreshed.current = true;
+      window.location.reload();
+    });
+
+    const updateOnFocus = () => {
+      navigator.serviceWorker.getRegistration().then((reg) => reg?.update());
+    };
+
+    window.addEventListener('focus', updateOnFocus);
+    window.addEventListener('online', updateOnFocus);
+
+    return () => {
+      window.removeEventListener('focus', updateOnFocus);
+      window.removeEventListener('online', updateOnFocus);
+      window.removeEventListener('pwa:check-updates', onManualCheck as EventListener);
+      window.removeEventListener('load', register);
+    };
   }, []);
 
   return null;
